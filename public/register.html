@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SillyTavern - Register</title>
+    <style>
+        body { background-color: #111; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background-color: #222; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); width: 300px; text-align: center; border: 1px solid #c1bd44; }
+        h2 { margin-bottom: 20px; color: #fff; font-size: 20px; }
+        input { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #444; background: #333; color: white; border-radius: 4px; }
+        button { width: 97%; padding: 10px; background: #c1bd44; border: none; color: black; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #a8a439; }
+        .msg { margin-top: 15px; font-size: 14px; font-weight: bold; }
+        .login-link { display: block; margin-top: 15px; color: #888; text-decoration: none; font-size: 13px; }
+        .login-link:hover { color: #fff; }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h2>Crea il tuo Account</h2>
+    <input type="text" id="username" placeholder="Username" required>
+    <input type="password" id="password" placeholder="Password" required>
+    <button onclick="registerUser()">Registrati</button>
+    <div id="status" class="msg"></div>
+    <a class="login-link" href="/">back to Login</a>
+</div>
+
+<script>
+async function registerUser() {
+    const user = document.getElementById('username').value.trim();
+    const pass = document.getElementById('password').value;
+    const status = document.getElementById('status');
+
+    if(!user || !pass) {
+        status.style.color = "red";
+        status.innerText = "Compila tutti i campi!";
+        return;
+    }
+
+    status.style.color = "yellow";
+    status.innerText = "Registering...";
+
+    try {
+        const response = await fetch('/api/users/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ handle: user, password: pass })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            status.style.color = "green";
+            status.innerText = "Account created succesfully.";
+            setTimeout(() => { window.location.href = "/"; }, 2000);
+        } else {
+            status.style.color = "red";
+            status.innerText = "Errore: " + (data.error || "error while generating user");
+        }
+    } catch (err) {
+        status.style.color = "red";
+        status.innerText = "error connecting to server.";
+    }
+}
+</script>
+</body>
+</html>

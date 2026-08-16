@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no">
+    <title>SillyTavern Login</title>
+    <style>
+        body {
+            background-color: rgb(36, 36, 37);
+            color: #fff;
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+        }
+        .login-box {
+            background-color: #222;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            width: 320px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        h2 { margin-top: 0; color: #fff; font-size: 22px; }
+        input {
+            width: 90%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #555;
+            background: #333;
+            color: white;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 90%;
+            padding: 11px;
+            background: #c1bd44;
+            border: none;
+            color: black;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 15px;
+            margin-top: 10px;
+        }
+        button:hover { background: #a8a439; }
+        .msg { margin-top: 15px; font-size: 14px; font-weight: bold; }
+        
+        /* Modal Popup Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 99999;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #222;
+            padding: 30px;
+            border-radius: 8px;
+            border: 2px solid #c1bd44;
+            width: 300px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-box">
+        <h2>Welcome to SillyTavern</h2>
+        <p style="color:#aaa; font-size:14px; margin-bottom:20px;">Enter Login Details</p>
+        <form id="login-form" onsubmit="handleLogin(event)">
+            <input type="text" id="username" placeholder="User handle" required>
+            <input type="password" id="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+        
+        <!-- TRIGGER TO OPEN FLOATING REGISTRATION WINDOW -->
+        <p style="margin-top: 20px; font-size: 14px;">
+            Don't have an account? <a href="#" onclick="document.getElementById('reg-modal').style.display='flex'" style="color: #c1bd44; text-decoration: none; font-weight: bold;">Register Here</a>
+        </p>
+    </div>
+
+    <!-- EMBEDDED REGISTRATION POPUP -->
+    <div id="reg-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="color:#fff; margin-top:0; margin-bottom:15px;">Create Account</h3>
+            <input type="text" id="reg-user" placeholder="Desired Username">
+            <input type="password" id="reg-pass" placeholder="Password">
+            <button onclick="submitRegistration()">Register</button>
+            <div id="reg-status" class="msg" style="color: yellow;"></div>
+            <p><a href="#" onclick="document.getElementById('reg-modal').style.display='none'" style="color: #888; text-decoration: underline; font-size: 13px;">Cancel</a></p>
+        </div>
+    </div>
+
+    <script>
+    // Handles the primary login mechanism
+    async function handleLogin(e) {
+        e.preventDefault();
+        const user = document.getElementById('username').value.trim();
+        const pass = document.getElementById('password').value;
+        try {
+            const response = await fetch('/api/users/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ handle: user, password: pass })
+            });
+            if (response.ok) { window.location.href = "/"; } 
+            else { alert("Login failed. Check your username and password."); }
+        } catch { alert("Error connecting to server."); }
+    }
+
+    // Handles the custom API registration engine bypass
+    async function submitRegistration() {
+    const user = document.getElementById('reg-user').value.trim();
+    const pass = document.getElementById('reg-pass').value;
+    const status = document.getElementById('reg-status');
+    
+    if(!user || !pass) { status.innerText = "Please fill in all fields."; return; }
+    if(user.length < 3) { status.innerText = "Username too short."; return; }
+    if(/[^a-zA-Z0-9_-]/.test(user)) { status.innerText = "Letters, numbers, _ and - only."; return; }
+
+    status.style.color = "yellow";
+    status.innerText = "Registering...";
+    
+    try {
+        // Hashing della password richiesto dall'applicazione nativa
+        const msgBuffer = new TextEncoder().encode(pass);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashedPassword = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const response = await fetch('/api/users/create', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest' // Forza l'header per far credere al server che sia localhost
+            },
+            body: JSON.stringify({ handle: user, password: hashedPassword })
+        });
+        
+        if (response.ok) {
+            status.style.color = "green"; 
+            status.innerText = "Success! Account created.";
+            setTimeout(() => { 
+                document.getElementById('reg-modal').style.display = 'none';
+                document.getElementById('username').value = user;
+                document.getElementById('password').value = pass;
+                document.getElementById('reg-status').innerText = "";
+            }, 1500);
+        } else {
+            // Se fallisce, tenta il fallback iniettando i parametri bypass
+            const fallbackResponse = await fetch('/api/users/create?remote=true', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ handle: user, password: hashedPassword })
+            });
+
+            if(fallbackResponse.ok) {
+                status.style.color = "green"; status.innerText = "Success (Bypass)!";
+                window.location.reload();
+            } else {
+                status.style.color = "red"; 
+                status.innerText = "Proxy block active. Use standard names.";
+            }
+        }
+    } catch (err) { 
+        status.style.color = "red"; 
+        status.innerText = "Connection lost."; 
+    }
+}
+    </script>
+</body>
+</html>
