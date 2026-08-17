@@ -35,6 +35,7 @@ import {
     initTextGenSettings,
 } from './scripts/textgen-settings.js';
 
+
 import {
     world_info,
     getWorldInfoPrompt,
@@ -252,6 +253,7 @@ import { getPresetManager, initPresetManager } from './scripts/preset-manager.js
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
 import { currentUser, setUserControls } from './scripts/user.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
+import { initCommunityCharacters } from './scripts/community-characters.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
 import { initCustomSelectedSamplers, validateDisabledSamplers } from './scripts/samplerSelect.js';
@@ -755,6 +757,7 @@ async function firstLoadInit() {
     initBookmarks();
     await getUserAvatars(true, user_avatar);
     await getCharacters();
+    initCommunityCharacters();
     await getBackgrounds();
     await initTokenizers();
     initBackgrounds();
@@ -8748,6 +8751,7 @@ export function select_selected_character(chid, { switchMenu = true } = {}) {
     $('#selected_chat_pole').val(characters[chid].chat);
     $('#create_date_pole').val(timestampToMoment(characters[chid].create_date).toISOString());
     $('#avatar_url_pole').val(characters[chid].avatar);
+	refreshVisibilityToggleForAvatar(characters[chid].avatar);
     $('#chat_import_avatar_url').val(characters[chid].avatar);
     $('#chat_import_character_name').val(characters[chid].name);
     $('#character_json_data').val(characters[chid].json_data);

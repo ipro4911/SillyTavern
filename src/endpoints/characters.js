@@ -26,6 +26,11 @@ import { ByafParser } from '../byaf.js';
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import cacheBuster from '../middleware/cacheBuster.js';
 
+// ---- Community character visibility (public/private) ----
+// Stored separately from the character card itself via node-persist, keyed per owner+avatar.
+// This is fully additive: it never touches the character PNG/card data or the TavernCard spec.
+const communityStorageKey = (handle, avatarFile) => `community_visibility:${handle}:${avatarFile}`;
+
 // With 100 MB limit it would take roughly 3000 characters to reach this limit
 const memoryCacheCapacity = getConfigValue('performance.memoryCacheCapacity', '100mb');
 const memoryCache = new MemoryLimitedMap(memoryCacheCapacity);
@@ -1681,5 +1686,184 @@ router.post('/export', validateAvatarUrlMiddleware, async function (request, res
     } catch (err) {
         console.error('Character export failed', err);
         response.sendStatus(500);
+    }
+});
+
+// ============================================================
+// Community character visibility (public/private) feature
+// ============================================================
+
+/**
+ * Set a character (owned by the logged-in user) public or private.
+ * Body: { avatar_url: string, public: boolean }
+ */
+router.post('/visibility/set', validateAvatarUrlMiddleware, async function (request, response) {
+    try {
+        if (!request.body || typeof request.body.avatar_url !== 'string' || typeof request.body.public !== 'boolean') {
+            return response.sendStatus(400);
+        }
+
+        const avatarFile = sanitize(request.body.avatar_url);
+        const filePath = path.join(request.user.directories.characters, avatarFile);
+
+        if (!fs.existsSync(filePath)) {
+            return response.sendStatus(404);
+        }
+
+        const handle = request.user.profile.handle;
+        const key = communityStorageKey(handle, avatarFile);
+
+        if (request.body.public) {
+            await storage.setItem(key, true);
+        } else {
+            await storage.removeItem(key);
+        }
+
+        return response.json({ success: true, public: request.body.public });
+    } catch (err) {
+        console.error('Failed to set character visibility', err);
+        return response.sendStatus(500);
+    }
+});
+
+/**
+ * Get visibility flags for all of the logged-in user's own characters.
+ * Returns: { [avatar_url]: boolean }
+ */
+router.post('/visibility/mine', async function (request, response) {
+    try {
+        const handle = request.user.profile.handle;
+        const files = fs.readdirSync(request.user.directories.characters).filter(f => f.endsWith('.png'));
+        const result = {};
+        for (const file of files) {
+            result[file] = !!(await storage.getItem(communityStorageKey(handle, file)));
+        }
+        return response.json(result);
+    } catch (err) {
+        console.error('Failed to read character visibility', err);
+        return response.sendStatus(500);
+    }
+});
+
+/**
+ * List all public characters across all users.
+ * Returns an array of shallow character objects with an added `owner_handle` field.
+ */
+router.post('/community', async function (request, response) {
+    try {
+        const results = [];
+        const userFolders = fs.readdirSync(globalThis.DATA_ROOT);
+
+        for (const handle of userFolders) {
+            const userJsonPath = path.join(globalThis.DATA_ROOT, handle, 'user.json');
+            const isRealUser = handle === 'default-user' || fs.existsSync(userJsonPath);
+            if (!isRealUser) continue;
+
+            let directories;
+            try {
+                directories = getUserDirectories(handle);
+            } catch {
+                continue;
+            }
+
+            if (!fs.existsSync(directories.characters)) continue;
+
+            const files = fs.readdirSync(directories.characters).filter(f => f.endsWith('.png'));
+            for (const file of files) {
+                const isPublic = await storage.getItem(communityStorageKey(handle, file));
+                if (!isPublic) continue;
+
+                try {
+                    const character = await processCharacter(file, directories, { shallow: true });
+                    if (!character.name) continue;
+                    character.owner_handle = handle;
+                    results.push(character);
+                } catch (err) {
+                    console.warn(`Failed to process community character ${file} for ${handle}`, err);
+                }
+            }
+        }
+
+        return response.json(results);
+    } catch (err) {
+        console.error('Failed to list community characters', err);
+        return response.sendStatus(500);
+    }
+});
+
+/**
+ * Copy a public character (owned by another user) into the logged-in user's own character list.
+ * Body: { owner_handle: string, avatar_url: string }
+ */
+router.post('/community/import', async function (request, response) {
+    try {
+        if (!request.body || typeof request.body.owner_handle !== 'string' || typeof request.body.avatar_url !== 'string') {
+            return response.sendStatus(400);
+        }
+
+        const ownerHandle = request.body.owner_handle;
+        const avatarFile = sanitize(request.body.avatar_url);
+
+        // Re-verify the source character is actually flagged public - never trust the client here.
+        const isPublic = await storage.getItem(communityStorageKey(ownerHandle, avatarFile));
+        if (!isPublic) {
+            return response.status(403).json({ error: 'Character is not public' });
+        }
+
+        let ownerDirectories;
+        try {
+            ownerDirectories = getUserDirectories(ownerHandle);
+        } catch {
+            return response.sendStatus(404);
+        }
+
+        const sourcePath = path.join(ownerDirectories.characters, avatarFile);
+        if (!fs.existsSync(sourcePath)) {
+            return response.sendStatus(404);
+        }
+
+        const newName = getPngName(avatarFile, request.user.directories);
+        const destPath = path.join(request.user.directories.characters, `${newName}.png`);
+
+        fs.copyFileSync(sourcePath, destPath);
+        console.info(`Community character copied: ${ownerHandle}/${avatarFile} -> ${request.user.profile.handle}/${path.basename(destPath)}`);
+
+        return response.json({ success: true, file_name: path.basename(destPath) });
+    } catch (err) {
+        console.error('Failed to import community character', err);
+        return response.sendStatus(500);
+    }
+});
+
+/**
+ * Serve a public character's avatar image across users (for the Community browse panel).
+ * Only serves avatars that are actually flagged public.
+ */
+router.get('/community/avatar/:handle/:filename', async function (request, response) {
+    try {
+        const handle = request.params.handle;
+        const filename = sanitize(request.params.filename);
+
+        const isPublic = await storage.getItem(communityStorageKey(handle, filename));
+        if (!isPublic) {
+            return response.sendStatus(404);
+        }
+
+        let directories;
+        try {
+            directories = getUserDirectories(handle);
+        } catch {
+            return response.sendStatus(404);
+        }
+
+        const avatarPath = path.join(directories.characters, filename);
+        if (!fs.existsSync(avatarPath)) {
+            return response.sendStatus(404);
+        }
+
+        return response.sendFile(avatarPath);
+    } catch (err) {
+        console.error('Failed to serve community avatar', err);
+        return response.sendStatus(500);
     }
 });
