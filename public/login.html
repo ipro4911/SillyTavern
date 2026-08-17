@@ -18,7 +18,6 @@
     </style>
 </head>
 <body>
-
     <div class="login-box">
         <h2>Welcome to SillyTavern</h2>
         <p style="color:#aaa; font-size:14px; margin-bottom:20px;">Enter Login Details</p>
@@ -27,9 +26,7 @@
             <input type="password" id="password" placeholder="Password" required>
             <button type="submit">Login</button>
         </form>
-        
         <div id="login-status" class="msg"></div>
-        
         <p style="margin-top: 20px; font-size: 14px;">
             Don't have an account? <a href="#" onclick="openRegistrationModal()" style="color: #c1bd44; text-decoration: none; font-weight: bold;">Register Here</a>
         </p>
@@ -57,7 +54,6 @@
         const user = document.getElementById('username').value.trim();
         const pass = document.getElementById('password').value;
         const status = document.getElementById('login-status');
-        
         status.innerText = "";
 
         try {
@@ -66,8 +62,8 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ handle: user, password: pass })
             });
-            
             if (response.ok) { 
+                localStorage.setItem('st_current_user', user);
                 window.location.href = "/"; 
             } else if (response.status === 404) {
                 status.style.color = "#ff4a4a";
@@ -100,7 +96,6 @@
                 headers: { 'Content-Type': 'application/json', 'X-Registration-Bypass': 'true' },
                 body: JSON.stringify({ handle: user, password: pass, auto_create: true })
             });
-            
             if (response.ok) {
                 status.style.color = "green"; 
                 status.innerText = "Success! Account generated.";
@@ -109,14 +104,12 @@
                     document.getElementById('username').value = user;
                     document.getElementById('password').value = "";
                     status.innerText = "";
-                    document.getElementById('login-status').innerText = "";
                 }, 1500);
             } else {
-                const data = await response.json().catch(() => ({}));
                 status.style.color = "red"; 
-                status.innerText = data.error || "Registration failed. Try another name.";
+                status.innerText = "Registration failed. Username taken.";
             }
-        } catch (err) { 
+        } catch { 
             status.style.color = "red"; 
             status.innerText = "Server communication error."; 
         }

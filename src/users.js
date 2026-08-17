@@ -169,17 +169,24 @@ export function getUserDirectories(handle) {
     if (DIRECTORIES_CACHE.has(handle)) {
         const cache = DIRECTORIES_CACHE.get(handle);
         if (cache) {
+            for (const key in cache) {
+                if (!fs.existsSync(cache[key])) {
+                    fs.mkdirSync(cache[key], { recursive: true });
+                }
+            }
             return cache;
         }
     }
     const directories = structuredClone(USER_DIRECTORY_TEMPLATE);
     for (const key in directories) {
         directories[key] = path.join(globalThis.DATA_ROOT, handle, USER_DIRECTORY_TEMPLATE[key]);
+        if (!fs.existsSync(directories[key])) {
+            fs.mkdirSync(directories[key], { recursive: true });
+        }
     }
     DIRECTORIES_CACHE.set(handle, directories);
     return directories;
 }
-
 export async function getUserAvatar(handle) {
     return PUBLIC_USER_AVATAR;
 }

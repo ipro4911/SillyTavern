@@ -164,26 +164,30 @@ app.use(cookieSession({
 app.use(setUserDataMiddleware);
 
 // CSRF Protection //
+// CSRF Protection //
 if (!cliArgs.disableCsrf) {
     const csrfSyncProtection = csrfSync({
         getTokenFromState: (req) => {
             if (!req.session) {
-                console.error('(CSRF error) getTokenFromState: Session object not initialized');
                 return;
             }
             return req.session.csrfToken;
         },
         getTokenFromRequest: (req) => {
-            return req.headers['x-csrf-token']?.toString();
+            return req.headers['x-csrf-token']?.toString() || req.body?._csrf;
         },
         storeTokenInState: (req, token) => {
             if (!req.session) {
-                console.error('(CSRF error) storeTokenInState: Session object not initialized');
                 return;
             }
             req.session.csrfToken = token;
         },
         skipCsrfProtection: (req) => {
+            // Only the login/register endpoint itself is exempt (no session exists yet to hold a CSRF token).
+            // Do NOT key this off a client-supplied header — that would let it skip CSRF on any route.
+            if (req.path === '/api/users/login') {
+                return true;
+            }
             return cliArgs.enableCorsProxy ? /^\/proxy\//.test(req.path) : false;
         },
         size: 32,
@@ -195,11 +199,15 @@ if (!cliArgs.disableCsrf) {
         });
     });
 
-    // Customize the error message
- csrfSyncProtection.invalidCsrfTokenError.message = color.red('Invalid CSRF token. Please refresh the page and try again.');
+    csrfSyncProtection.invalidCsrfTokenError.message = color.red('Invalid CSRF token. Please refresh the page and try again.');
     csrfSyncProtection.invalidCsrfTokenError.stack = undefined;
 
-   // app.use(csrfSyncProtection.csrfSynchronisedProtection);
+    app.use((req, res, next) => {
+        if (req.path === '/api/users/login') {
+            return next();
+        }
+        return csrfSyncProtection.csrfSynchronisedProtection(req, res, next);
+    });
 } else {
     console.warn('\nCSRF protection is disabled. This will make your server vulnerable to CSRF attacks.\n');
     app.get('/csrf-token', (req, res) => {
@@ -209,16 +217,24 @@ if (!cliArgs.disableCsrf) {
     });
 }
 
+
 // Static files
 // Host index page
 app.get('/', cacheBuster.middleware, (request, response) => {
     if (shouldRedirectToLogin(request)) {
-        const query = request.url.split('?')[1];
+        const query = request.url.split('?');
         const redirectUrl = query ? `/login?${query}` : '/login';
         return response.redirect(redirectUrl);
     }
-
-    return response.sendFile('index.html', { root: path.join(serverDirectory, 'public') });
+    
+    return response.sendFile('index.html', { root: path.resolve(process.cwd(), 'public') });
+});
+app.get('/img/default-user.png', (_req, res) => {
+    const backupImg = path.join(serverDirectory, 'public', 'img', 'user-default.png');
+    if (fs.existsSync(backupImg)) {
+        return res.sendFile(backupImg);
+    }
+    return res.sendStatus(404);
 });
 
 // Callback endpoint for OAuth PKCE flows (e.g. OpenRouter)

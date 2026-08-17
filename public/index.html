@@ -8213,6 +8213,71 @@
             documentHeight();
         });
     </script>
+
+    <!-- INIETTORE BOTTONI DISCONNETTI ED ELIMINA PROTETTO -->
+    <script>
+    (function() {
+        function checkAndInject() {
+            const user = localStorage.getItem('st_current_user');
+            if (!user || window.location.pathname.includes('login') || document.getElementById('custom-btn-container')) return;
+
+            const isDefaultUser = user === 'default-user';
+            const isIt = navigator.language.startsWith('it');
+            const txtDel = isIt ? '❌ Elimina Account' : '❌ Delete Account';
+            const txtOut = isIt ? '🚪 Disconnetti' : '🚪 Log Out';
+            const txtWarn = isIt ?
+                'ATTENZIONE: Sei sicuro di voler cancellare permanentemente l\'account (' + user + ')? Tutto verrà spazzato via.' :
+                'WARNING: Are you sure you want to permanently delete your account (' + user + ')? Everything will be wiped.';
+
+            const box = document.createElement('div');
+            box.id = 'custom-btn-container';
+            box.style.cssText = 'position: fixed !important; bottom: 25px !important; right: 25px !important; z-index: 999999999 !important; display: flex !important; flex-direction: column !important; gap: 8px !important; pointer-events: auto !important;';
+
+            const btnOut = document.createElement('div');
+            btnOut.innerText = txtOut;
+            btnOut.style.cssText = 'background-color: #4a4a4a !important; color: white !important; padding: 10px 14px !important; border-radius: 6px !important; font-weight: bold !important; cursor: pointer !important; font-size: 13px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important; text-align: center !important; width: 110px !important; font-family: sans-serif !important;';
+            btnOut.onclick = function() {
+                localStorage.removeItem('st_current_user');
+                window.location.href = '/login';
+            };
+
+            const btnDel = document.createElement('div');
+            btnDel.innerText = txtDel;
+            btnDel.style.cssText = 'background-color: #ff4a4a !important; color: white !important; padding: 10px 14px !important; border-radius: 6px !important; font-weight: bold !important; cursor: pointer !important; font-size: 13px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important; text-align: center !important; width: 110px !important; font-family: sans-serif !important;';
+            btnDel.onclick = async function() {
+                if (confirm(txtWarn)) {
+                    try {
+                        const tokenRes = await fetch('/csrf-token');
+                        const { token } = await tokenRes.json();
+
+                        const res = await fetch('/api/users/delete-account', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': token,
+                            },
+                            body: JSON.stringify({ handle: user })
+                        });
+                        if (res.ok) {
+                            localStorage.removeItem('st_current_user');
+                            window.location.href = '/login';
+                        } else {
+                            alert('Delete failed (' + res.status + ')');
+                        }
+                    } catch (e) { alert('Network error'); }
+                }
+            };
+
+            box.appendChild(btnOut);
+            if (!isDefaultUser) {
+                box.appendChild(btnDel);
+            }
+            document.body.appendChild(box);
+        }
+
+        setInterval(checkAndInject, 1500);
+    })();
+    </script>
 </body>
 
 </html>
